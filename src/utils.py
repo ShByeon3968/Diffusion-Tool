@@ -21,7 +21,7 @@ class UtillFuctions():
             old_file_path = os.path.join(directory_path, filename)
             
             # 파일이 실제 파일인지 확인 (폴더 무시)
-            if os.path.isfile(old_file_path) :
+            if os.path.isfile(old_file_path) and os.path.splitext(filename)[1] == ".jpg" :
                 # 원하는 프레임일 경우만 수행
                 if index in frame_numbers:
                     file_extension = os.path.splitext(filename)[1]  # 파일 확장자 추출
