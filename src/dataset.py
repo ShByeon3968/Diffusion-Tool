@@ -3,11 +3,11 @@ from torch.utils.data import Dataset
 from PIL import Image
 import os
 
-from utils import json_loader
+from utils import UtillFuctions
 
 class CustomCocoDataset(Dataset):
     def __init__(self, json_path, img_dir, transform=None):
-        self.coco_data = json_loader(json_path)
+        self.coco_data = UtillFuctions.json_loader(json_path)
         self.img_dir = img_dir
         self.transform = transform
         self.images = self.coco_data['images']

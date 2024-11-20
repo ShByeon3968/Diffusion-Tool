@@ -1,0 +1,14 @@
+batch_size: 4
+learning_rate: 0.001
+num_epochs: 10
+img_size: [640, 640]
+
+train_data:
+  json_path: 'dataset/annotations/instances_train.json'
+  img_dir: 'dataset/train/'
+
+val_data:
+  json_path: 'dataset/annotations/instances_val.json'
+  img_dir: 'dataset/val/'
+
+model_config: 'yolov8n.yaml'  # Model configuration file
