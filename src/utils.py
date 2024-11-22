@@ -3,9 +3,7 @@ import numpy as np
 import cv2
 import os
 import yaml
-from dataset import CustomCocoDataset
-from torch.utils.data import DataLoader
-from torchvision import transforms
+
 
 class UtillFuctions():
     @staticmethod
@@ -120,28 +118,51 @@ class UtillFuctions():
         print(f"COCO annotation JSON 파일 '{output_file}'이 생성되었습니다.")
 
     @staticmethod
-    def merge_json_files(directory_path, output_file):
-        merged_data = []
+    def merge_coco_jsons(input_dir, output_path):
+        merged_data = {
+            "info": None,
+            "licenses": None,
+            "images": [],
+            "annotations": [],
+            "categories": []
+        }
+        image_id_offset = 0
+        annotation_id_offset = 0
 
-        # 디렉토리 내 모든 JSON 파일 목록 가져오기
-        json_files = [f for f in os.listdir(directory_path) if f.endswith('.json')]
-
-        for json_file in json_files:
-            file_path = os.path.join(directory_path, json_file)
-
-            # JSON 파일 로드 및 데이터 병합
-            with open(file_path, 'r') as f:
+        # Iterate through all JSON files in the input directory
+        for idx, json_file in enumerate(os.listdir(input_dir)):
+            if not json_file.endswith('.json'):
+                continue
+            
+            json_path = os.path.join(input_dir, json_file)
+            with open(json_path, 'r') as f:
                 data = json.load(f)
-                if isinstance(data, list):
-                    merged_data.extend(data)  # 리스트 데이터면 병합
-                else:
-                    merged_data.append(data)  # 단일 객체면 추가
+            
+            if idx == 0:
+                # Add "info", "licenses", and "categories" only from the first file
+                merged_data["info"] = data.get("info", {})
+                merged_data["licenses"] = data.get("licenses", [])
+                merged_data["categories"] = data.get("categories", [])
+            
+            # Merge "images" and update image IDs
+            for image in data["images"]:
+                image["id"] += image_id_offset
+                merged_data["images"].append(image)
 
-        # 합쳐진 데이터를 출력 파일로 저장
-        with open(output_file, 'w') as output_f:
-            json.dump(merged_data, output_f, indent=4)
+            # Merge "annotations" and update annotation and image IDs
+            for annotation in data["annotations"]:
+                annotation["id"] += annotation_id_offset
+                annotation["image_id"] += image_id_offset
+                merged_data["annotations"].append(annotation)
 
-        print(f"모든 JSON 파일이 '{output_file}'로 병합되었습니다.")
+            # Update offsets
+            image_id_offset = max(img["id"] for img in merged_data["images"]) + 1
+            annotation_id_offset = max(ann["id"] for ann in merged_data["annotations"]) + 1
+
+        # Write merged JSON to the output path
+        with open(output_path, 'w') as f:
+            json.dump(merged_data, f, indent=4)
+        print(f"Merged JSON saved to: {output_path}")
 
     @staticmethod
     def draw_bounding_boxes(coco_json_path, image_dir):
@@ -182,18 +203,3 @@ class UtillFuctions():
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
     
-class ConfigDataset:
-    @staticmethod
-    def load_dataset(json,images,transform):
-        dataset = CustomCocoDataset(
-            json_path= json,
-            img_dir=images,
-            transform=transform
-        )
-        return dataset
-    
-    @staticmethod
-    def set_dataloader(train_dataset,val_dataset,batch_size:int,is_shuffle:bool):
-        train_loader = DataLoader(train_dataset,batch_size,shuffle=is_shuffle)
-        val_loader = DataLoader(val_dataset,batch_size,shuffle=is_shuffle)
-        return train_loader, val_loader

@@ -2,12 +2,13 @@ import torch
 from torch.utils.data import Dataset
 from PIL import Image
 import os
-
+from torch.utils.data import DataLoader
+from torchvision import transforms
 from utils import UtillFuctions
 
 class CustomCocoDataset(Dataset):
     def __init__(self, json_path, img_dir, transform=None):
-        self.coco_data = UtillFuctions.json_loader(json_path)
+        self.coco_data = UtillFuctions.json_loader(json_path,'r')
         self.img_dir = img_dir
         self.transform = transform
         self.images = self.coco_data['images']
@@ -38,3 +39,20 @@ class CustomCocoDataset(Dataset):
             'labels': labels
         }
         return sample
+    
+
+class ConfigDataset:
+    @staticmethod
+    def load_dataset(json,images,transform):
+        dataset = CustomCocoDataset(
+            json_path= json,
+            img_dir=images,
+            transform=transform
+        )
+        return dataset
+    
+    @staticmethod
+    def set_dataloader(train_dataset,val_dataset,batch_size:int,is_shuffle:bool):
+        train_loader = DataLoader(train_dataset,batch_size,shuffle=is_shuffle)
+        val_loader = DataLoader(val_dataset,batch_size,shuffle=is_shuffle)
+        return train_loader, val_loader
