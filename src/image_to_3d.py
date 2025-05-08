@@ -26,7 +26,7 @@ class MVSGenerator:
         self.image = Image.open(input_image_path)
 
     def set_pipeline(self):
-        self.pipeline = DiffusionPipeline.from_pretrained("sudo-ai/zero123plus-v1.2", custom_pipeline="InstantMesh/zero123plus",torch_dtype=torch.float16)
+        self.pipeline = DiffusionPipeline.from_pretrained("sudo-ai/zero123plus-v1.2", custom_pipeline="src/InstantMesh/zero123plus",torch_dtype=torch.float16)
         self.pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(self.pipeline.scheduler.config, timestep_spacing='trailing')
         unet_ckpt_path = hf_hub_download(repo_id="TencentARC/InstantMesh",filename="diffusion_pytorch_model.bin",repo_type="model")
         state_dict = torch.load(unet_ckpt_path, map_location="cpu")
