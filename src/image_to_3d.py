@@ -17,6 +17,10 @@ from huggingface_hub import hf_hub_download
 from utils import *
 
 class MVSGenerator:
+    '''
+    Multi-View Stereopsis (MVS) 생성기
+    - DiffusionPipeline: sudo-ai/zero123plus-v1.2
+    '''
     def __init__(self,input_image_path:str):
         self.set_pipeline()
         self.image = Image.open(input_image_path)

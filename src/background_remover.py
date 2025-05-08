@@ -4,6 +4,9 @@ import io
 
 class BackgroundRemover:
     def __init__(self):
+        '''
+        rembg Background Remover
+        '''
         pass
 
     def remove_background(self, input_image: bytes) -> bytes:
