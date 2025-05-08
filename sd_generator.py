@@ -1,3 +1,4 @@
+from abc import *
 from diffusers import StableDiffusionPipeline,SanaPipeline
 import torch
 from PIL import Image
@@ -5,10 +6,11 @@ from transformers import CLIPTextModel, CLIPTokenizer
 from safetensors.torch import load_file
 
 
-class DiffusionGenerator:
+class DiffusionGenerator(metaclass=ABCMeta):
     def __init__(self):
         pass
-
+    
+    @abstractmethod
     def generate(self):
         NotImplementedError()
 
