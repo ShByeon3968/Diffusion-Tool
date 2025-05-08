@@ -1,4 +1,4 @@
-# 🧠 Diffusion 기반 3D 객체 생성기
+# Diffusion 기반 3D 객체 생성기
 
 ![Main Banner](assets/banner.png)
 
@@ -6,9 +6,9 @@
 
 ---
 
-## ✨ 주요 기능
+## 주요 기능
 
-### 🎨 1. Text-to-Image
+### 1. Text-to-Image
 텍스트 프롬프트를 입력하면 **Stable Diffusion**을 통해 컨셉 이미지를 생성합니다.
 
 | 프롬프트 | 생성 이미지 |
@@ -18,7 +18,7 @@
 
 ---
 
-### 🧱 2. 이미지 기반 3D 객체 복원
+### 2. 이미지 기반 3D 객체 복원
 분리된 객체 이미지를 **Image-to-3D** 기술(InstantMesh)에 입력하여 3D Mesh(.obj)를 자동 생성합니다.
 
 | 입력 이미지 | 복원된 3D 모델 |
