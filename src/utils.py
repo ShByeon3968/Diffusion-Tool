@@ -354,6 +354,12 @@ def loadobjtex(meshfile):
     uvs = np.array(vt, dtype=np.float32)
     return pointnp_px3, facenp_fx3, uvs, ftnp_fx3
 
+def convert_obj_to_glb(obj_path):
+    mesh = trimesh.load(obj_path, force='mesh')
+    glb_path = obj_path.replace(".obj", ".glb")
+    mesh.export(glb_path)
+    return glb_path
+
 
 # ==============================================================================================
 def interpolate(attr, rast, attr_idx, rast_db=None):
