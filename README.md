@@ -27,10 +27,3 @@
 
 ---
 
-## ⚙️ 설치 및 실행
-
-```bash
-git clone https://github.com/username/diffusion-3d-generator.git
-cd diffusion-3d-generator
-pip install -r requirements.txt
-python app.py
