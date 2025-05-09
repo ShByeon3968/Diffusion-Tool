@@ -1,6 +1,6 @@
 # Diffusion 기반 3D 객체 생성기
 
-![Main Banner](assets/banner.png)
+![Main Banner](asset/gradio_demo.png)
 
 본 프로젝트는 **Stable Diffusion 기반 이미지 생성**과 **Image-to-3D (InstantMesh)**를 활용하여 텍스트 프롬프트로부터 3D 객체를 자동 생성하는 AI 콘텐츠 생성 도구입니다.
 
