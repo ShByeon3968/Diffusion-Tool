@@ -15,6 +15,7 @@ from diffusers import DiffusionPipeline, EulerAncestralDiscreteScheduler
 from torchvision.transforms import v2
 from huggingface_hub import hf_hub_download
 from utils import *
+import uuid
 
 class MVSGenerator:
     '''
@@ -155,15 +156,13 @@ class MeshGenerator:
             batch_size=1, radius=4.5, elevation=20.0, is_flexicubes=self.IS_FLEXICUBES).to(self.device)
         images = images.unsqueeze(0).to(self.device )
         images = v2.functional.resize(images, (320, 320), interpolation=3, antialias=True).clamp(0, 1)
-        directory = out_dir
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        tempfile.tempdir = directory
-        mesh_fpath = tempfile.NamedTemporaryFile(suffix=f".obj", delete=False).name
-        print(mesh_fpath)
-        mesh_basename = os.path.basename(mesh_fpath).split('.')[0]
-        mesh_dirname = os.path.dirname(mesh_fpath)
-        video_fpath = os.path.join(mesh_dirname, f"{mesh_basename}.mp4")
+        os.makedirs(out_dir, exist_ok=True)
+        
+        # 고정된 .obj 경로 생성
+        mesh_basename = f"mesh_{uuid.uuid4().hex[:8]}"
+        mesh_fpath = os.path.join(out_dir, f"{mesh_basename}.obj")
+        video_fpath = os.path.join(out_dir, f"{mesh_basename}.mp4")
+
         with torch.no_grad():
             planes = self.model.forward_planes(images, input_cameras)
             chunk_size = 20 if self.IS_FLEXICUBES else 1
@@ -171,13 +170,16 @@ class MeshGenerator:
             frames = []
             for i in tqdm(range(0, render_cameras.shape[1], chunk_size)):
                 if self.IS_FLEXICUBES:
-                    frame = self.model.forward_geometry(planes, render_cameras[:, i:i+chunk_size], render_size=render_size,)['img']
+                    frame = self.model.forward_geometry(
+                        planes, render_cameras[:, i:i+chunk_size], render_size=render_size)['img']
                 else:
-                    frame = self.model.synthesizer(planes, cameras=render_cameras[:, i:i+chunk_size],render_size=render_size,)['images_rgb']
+                    frame = self.model.synthesizer(
+                        planes, cameras=render_cameras[:, i:i+chunk_size], render_size=render_size)['images_rgb']
                 frames.append(frame)
             frames = torch.cat(frames, dim=1)
-            self.images_to_video(frames[0], video_fpath, fps=30,)
+            self.images_to_video(frames[0], video_fpath, fps=30)
             print(f"Video saved to {video_fpath}")
+
         mesh_fpath = self.make_mesh(mesh_fpath, planes)
         return video_fpath, mesh_fpath
     
@@ -185,8 +187,8 @@ class MeshGenerator:
         '''
         images -> make3d 실행
         '''
-        output_video, output_model_obj = self.make3d(images,out_dir)
-        return output_video, output_model_obj
+        video_fpath, mesh_fpath = self.make3d(images,out_dir)
+        return video_fpath, mesh_fpath
     
 
         

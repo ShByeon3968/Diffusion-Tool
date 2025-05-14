@@ -1,5 +1,5 @@
 from abc import *
-from diffusers import StableDiffusionPipeline,SanaPipeline
+from diffusers import StableDiffusionXLPipeline,SanaPipeline
 import torch
 from PIL import Image
 from transformers import CLIPTextModel, CLIPTokenizer
@@ -15,14 +15,26 @@ class DiffusionGenerator(metaclass=ABCMeta):
         NotImplementedError()
 
 class StableDiffusionGenerator(DiffusionGenerator):
-    def __init__(self, model_name='stabilityai/stable-diffusion-2-1',device='cuda'):
-        self.pipe = StableDiffusionPipeline.from_pretrained(model_name, torch_dtype=torch.float16)
+    def __init__(self, model_name='stabilityai/stable-diffusion-xl-base-1.0',device='cuda'):
+        self.pipe = StableDiffusionXLPipeline.from_pretrained(model_name, torch_dtype=torch.float16)
         self.pipe = self.pipe.to(device)
         self.pipe.safety_checker = None
 
     def generate(self,prompt, negative_prompt="",guidance_scale=7.5, num_inference_steps=30):
         result = self.pipe(prompt, negative_prompt=negative_prompt, guidance_scale=guidance_scale,
-                           num_inference_steps=num_inference_steps).images[0]
+                           num_inference_steps=num_inference_steps).images
+        return result
+    
+class CarGenerator(DiffusionGenerator):
+    def __init__(self, model_name='stabilityai/stable-diffusion-xl-base-1.0',device='cuda'):
+        self.pipe = StableDiffusionXLPipeline.from_pretrained(model_name, torch_dtype=torch.float16)
+        self.pipe.load_lora_weights('checkpoint/HT_Monaro-000004.safetensors')
+        self.pipe = self.pipe.to(device)
+        self.pipe.safety_checker = None
+
+    def generate(self,prompt, negative_prompt="",guidance_scale=7.5, num_inference_steps=30):
+        result = self.pipe(prompt, negative_prompt=negative_prompt, guidance_scale=guidance_scale,
+                           num_inference_steps=num_inference_steps).images
         return result
     
 class SanaGenerator(DiffusionGenerator):
