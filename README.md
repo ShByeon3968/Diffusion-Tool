@@ -26,4 +26,9 @@
 | ![Input](assets/sample_input.png) | ![3D](assets/sample_3d_output.png) |
 
 ---
-
+### 3. Install
+```
+git clone https://github.com/ShByeon3968/Diffusion-Tool
+cd Diffusion-Tool
+conda env create -f environment.yaml
+```
