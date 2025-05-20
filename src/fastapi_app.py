@@ -50,9 +50,22 @@ def generate_3d_model(prompt: str = Form(...), model: str = Form(...)):
         # 4. .obj → .glb 변환
         glb_path = convert_obj_to_glb(obj_path)
 
-        return FileResponse(glb_path, media_type="model/gltf-binary", filename="generated_model.glb")
+        return FileResponse(glb_path, media_type="model/gltf-binary", filename=f"{prompt}.glb")
 
     except Exception as e:
         print("❌ Exception occurred:")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/image/{uid}/{type}")
+def get_generated_image(uid: str, type: str):
+    if type not in ["gen", "mvs"]:
+        raise HTTPException(status_code=400, detail="Invalid image type")
+
+    filename = "gen_image.png" if type == "gen" else "mvs_image.png"
+    image_path = os.path.join("output", "fastapi", uid, filename)
+
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return FileResponse(image_path, media_type="image/png")
