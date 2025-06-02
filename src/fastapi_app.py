@@ -59,7 +59,7 @@ def generate_3d_model(prompt: str = Form(...), model: str = Form(...)):
             obj_path = glob(os.path.join(mesh_output_dir, "*.obj"))[0]
             del mesh_gen
             gc.collect()
-
+            
         # 4. .obj → .glb 변환
         glb_path = convert_obj_to_glb(obj_path)
 
