@@ -1,8 +1,0 @@
-controlnet_path: "Animation_Module/controlnet_ckpt/control_v11f1p_sd15_depth.pth"
-motion_adapter_id: "wangfuyun/AnimateLCM"
-autoencoder_id: "stabilityai/sd-vae-ft-mse"
-animate_model_id: "emilianJR/epiCRealism"
-lora_weight: "wangfuyun/AnimateLCM"
-depth_detector: "lllyasviel/Annotators"
-num_frames: 30
-fps: 8
