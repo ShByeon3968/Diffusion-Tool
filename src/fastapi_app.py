@@ -1,13 +1,16 @@
 from fastapi import FastAPI, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
+from typing import Optional
 import uuid, os, torch, gc, traceback
 from glob import glob
 
 from mesh_editor import run_mesh_editor
-from prompt_suggester import improve_prompt_for_asset_image
+from prompt_planner import plan_and_rewrite_prompts
+from feedback_rewriter import rewrite_prompt_with_feedback
 from sd_generator import SanaGenerator, CarGenerator, StableDiffusionGenerator
 from image_to_3d import MVSGenerator, MeshGenerator
 from utils import convert_obj_to_glb
+
 
 app = FastAPI()
 
@@ -32,7 +35,7 @@ def generate_mesh(prompt: str, model: str, output_dir: str, uid: str):
         with torch.no_grad():
             # 1. 이미지 생성
             generator = GENERATOR_MAP[model]()
-            prompt = improve_prompt_for_asset_image(prompt)
+            prompt = plan_and_rewrite_prompts(prompt)
             gen_image = generator.generate(prompt)[0]
             image_path = os.path.join(output_dir, "gen_image.png")
             gen_image.save(image_path)
@@ -125,3 +128,13 @@ def run_mesh_editor_gui(uid: str):
     
     # Assuming the mesh editor is a local application that can be opened with the GLB file
     run_mesh_editor(glb_path[0], auto_run=True)
+
+@app.post("/feedback_rewrite")
+def rewrite_prompt_feedback(
+    prompt: str = Form(...),
+    feedback: str = Form(...),
+    visual_goals: Optional[str] = Form(None),  # optional comma-separated goals
+):
+    goals_list = [g.strip() for g in visual_goals.split(",")] if visual_goals else []
+    rewritten_prompt = rewrite_prompt_with_feedback(prompt, feedback, goals_list)
+    return JSONResponse(content={"rewritten_prompt": rewritten_prompt})
