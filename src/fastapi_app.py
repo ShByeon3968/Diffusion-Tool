@@ -1,80 +1,109 @@
-from fastapi import FastAPI, Form, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
-import uuid
-import os
-from sd_generator import SanaGenerator, CarGenerator, DiffusionGenerator
+from fastapi import FastAPI, Form, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
+import uuid, os, torch, gc, traceback
+from glob import glob
+
+from mesh_editor import run_mesh_editor
+from prompt_suggester import improve_prompt_for_asset_image
+from sd_generator import SanaGenerator, CarGenerator, StableDiffusionGenerator
 from image_to_3d import MVSGenerator, MeshGenerator
 from utils import convert_obj_to_glb
-from glob import glob
-import traceback
-import torch
-import gc
 
 app = FastAPI()
 
-last_uid = None
-
-# 모델 선택 매핑
+# ─────────────────────────────────────────
+# 모델 맵핑
+# ─────────────────────────────────────────
 GENERATOR_MAP = {
     "Sana": SanaGenerator,
     "Car": CarGenerator,
-    "Stable Diffusion": DiffusionGenerator,
+    "Stable Diffusion": StableDiffusionGenerator,
 }
 
+STATUS_MAP = {}
+
+# ─────────────────────────────────────────
+# 백그라운드 메쉬 생성 함수
+# ─────────────────────────────────────────
+def generate_mesh(prompt: str, model: str, output_dir: str, uid: str):
+    try:
+        STATUS_MAP[uid] = "pending"
+
+        with torch.no_grad():
+            # 1. 이미지 생성
+            generator = GENERATOR_MAP[model]()
+            prompt = improve_prompt_for_asset_image(prompt)
+            gen_image = generator.generate(prompt)[0]
+            image_path = os.path.join(output_dir, "gen_image.png")
+            gen_image.save(image_path)
+            generator.pipe.to("cpu")
+            del generator
+            torch.cuda.empty_cache()
+            gc.collect()
+
+            # 2. MVS 이미지 생성
+            mvs = MVSGenerator(input_image_path=image_path)
+            mv_images, _ = mvs.excute()
+            mv_image_path = os.path.join(output_dir, "mvs_image.png")
+            mv_images.save(mv_image_path)
+            mvs.pipeline.to("cpu")
+            del mvs
+            torch.cuda.empty_cache()
+            gc.collect()
+
+            # 3. 메쉬 생성
+            mesh_dir = os.path.join(output_dir, "mesh")
+            os.makedirs(mesh_dir, exist_ok=True)
+            mesh_generator = MeshGenerator()
+            mesh_generator.excute(mv_images, mesh_dir,uid)
+            obj_path = glob(os.path.join(mesh_dir, "*.obj"))[0]
+            mesh_generator.model.to("cpu")
+            del mesh_generator
+            torch.cuda.empty_cache()
+            gc.collect()
+
+            # 4. GLB 변환
+            glb_path = convert_obj_to_glb(obj_path)
+            os.rename(glb_path, os.path.join(output_dir, "mesh.glb"))
+
+            STATUS_MAP[uid] = "done"
+    except Exception:
+        STATUS_MAP[uid] = "error"
+        traceback.print_exc()
+    finally:
+        torch.cuda.empty_cache()
+        gc.collect()
+
+# ─────────────────────────────────────────
+# 생성 요청 → UID 반환
+# ─────────────────────────────────────────
 @app.post("/generate/")
-def generate_3d_model(prompt: str = Form(...), model: str = Form(...)):
-    global last_uid
+def generate_3d_model(prompt: str = Form(...), model: str = Form(...), background_tasks: BackgroundTasks = None):
     if model not in GENERATOR_MAP:
         raise HTTPException(status_code=400, detail=f"Unknown model: {model}")
 
     uid = str(uuid.uuid4())[:8]
-    last_uid = uid
-    output_dir = f"./output/fastapi/{uid}"
+    output_dir = os.path.join("output", "fastapi", uid)
     os.makedirs(output_dir, exist_ok=True)
 
-    try:
-        with torch.no_grad():
-            # 1. 이미지 생성
-            generator_class = GENERATOR_MAP[model]
-            sd_gen = generator_class()
-            image = sd_gen.generate(prompt)[0]
-            image_path = os.path.join(output_dir, "gen_image.png")
-            image.save(image_path)
-            del sd_gen
-            gc.collect()
+    STATUS_MAP[uid] = "pending"
+    background_tasks.add_task(generate_mesh, prompt, model, output_dir, uid)
 
-            # 2. MVS 이미지 생성
-            mvs_gen = MVSGenerator(input_image_path=image_path)
-            mv_images, _ = mvs_gen.excute()
-            mv_image_path = os.path.join(output_dir, "mvs_image.png")
-            mv_images.save(mv_image_path)
-            del mvs_gen
-            gc.collect()
+    return JSONResponse(status_code=200, content={"uid": uid})
 
-            # 3. 메쉬 생성
-            mesh_output_dir = os.path.join(output_dir, "mesh/")
-            os.makedirs(mesh_output_dir, exist_ok=True)
-            mesh_gen = MeshGenerator()
-            mesh_gen.excute(mv_images, mesh_output_dir)
-            obj_path = glob(os.path.join(mesh_output_dir, "*.obj"))[0]
-            del mesh_gen
-            gc.collect()
-            
-        # 4. .obj → .glb 변환
-        glb_path = convert_obj_to_glb(obj_path)
+# ─────────────────────────────────────────
+# GLB 반환
+# ─────────────────────────────────────────
+@app.get("/glb/{uid}")
+def get_glb(uid: str):
+    glb_path = os.path.join("output", "fastapi", uid, "mesh.glb")
+    if not os.path.exists(glb_path):
+        raise HTTPException(status_code=404, detail="GLB file not found")
+    return FileResponse(glb_path, media_type="model/gltf-binary", filename=f"{uid}.glb")
 
-        return FileResponse(glb_path, media_type="model/gltf-binary", filename=f"{prompt}.glb")
-
-    except Exception as e:
-        print("❌ Exception occurred:")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    finally:
-        # 메모리 해제
-        torch.cuda.empty_cache()
-        gc.collect()
-    
+# ─────────────────────────────────────────
+# 이미지 반환 (gen or mvs)
+# ─────────────────────────────────────────
 @app.get("/image/{uid}/{type}")
 def get_generated_image(uid: str, type: str):
     if type not in ["gen", "mvs"]:
@@ -87,9 +116,12 @@ def get_generated_image(uid: str, type: str):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(image_path, media_type="image/png")
 
-@app.get("/last_uid/")
-def get_last_uid():
-    if last_uid:
-        return PlainTextResponse(last_uid)
-    return PlainTextResponse("none")
-
+@app.get("/run_mesh_editor")
+def run_mesh_editor_gui(uid: str):
+    glb_dir = os.path.join("output", "fastapi", uid, "mesh")
+    glb_path = glob(os.path.join(glb_dir, "*.glb"))
+    if not os.path.exists(glb_path):
+        raise HTTPException(status_code=404, detail="GLB file not found")
+    
+    # Assuming the mesh editor is a local application that can be opened with the GLB file
+    run_mesh_editor(glb_path[0], auto_run=True)

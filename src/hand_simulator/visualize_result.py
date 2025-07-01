@@ -8,7 +8,7 @@ df = pd.read_csv("y_axis_steering.csv")
 plt.figure(figsize=(14, 6))
 
 # Line plot of steering value
-plt.plot(df["frame"], df["steering"], label="Steering Value", color='blue')
+plt.plot(df["frame"], df["steering_smooth"], label="Steering Value", color='blue')
 
 # Highlight direction changes
 for idx, row in df.iterrows():

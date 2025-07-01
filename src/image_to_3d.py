@@ -34,7 +34,6 @@ class MVSGenerator:
         self.pipeline.unet.load_state_dict(state_dict, strict=True)
         self.device = torch.device("cuda")
         self.pipeline = self.pipeline.to(self.device)
-        seed_everything(0)
 
     def preprocess(self,input_image, do_remove_background):
         rembg_session = rembg.new_session() if do_remove_background else None
@@ -73,12 +72,13 @@ class MVSGenerator:
         return mv_images, mv_show_image
     
 class MeshGenerator:
-    def __init__(self, config_path:str='configs/instant-mesh-base.yaml'):
+    def __init__(self, config_path:str='configs/instant-mesh-large.yaml', use_fp16=True, use_compile=True):
+        self.use_fp16 = use_fp16
+        self.use_compile = use_compile
         self.model = self.set_model(config_path)
         self.device = torch.device('cuda')
 
     def set_model(self,config_path):
-        config = OmegaConf.load(config_path)
         config = OmegaConf.load(config_path)
         config_name = os.path.basename(config_path).replace('.yaml', '')
         model_config = config.model_config
@@ -94,6 +94,10 @@ class MeshGenerator:
         if self.IS_FLEXICUBES:
             model.init_flexicubes_geometry(device, fovy=30.0)
         model = model.eval()
+
+        if self.use_compile and hasattr(model, 'compile'):
+            model = torch.compile(model)
+
         return model
     
     def images_to_video(self, images, output_path, fps=30):
@@ -147,7 +151,7 @@ class MeshGenerator:
             # print(f"Mesh saved to {mesh_fpath}")
         return mesh_fpath
 
-    def make3d(self,images,out_dir):
+    def make3d(self,images,out_dir,uid):
         images = np.asarray(images, dtype=np.float32) / 255.0
         images = torch.from_numpy(images).permute(2, 0, 1).contiguous().float()     # (3, 960, 640)
         images = rearrange(images, 'c (n h) (m w) -> (n m) c h w', n=3, m=2)        # (6, 3, 320, 320)
@@ -159,7 +163,7 @@ class MeshGenerator:
         os.makedirs(out_dir, exist_ok=True)
         
         # 고정된 .obj 경로 생성
-        mesh_basename = f"mesh_{uuid.uuid4().hex[:8]}"
+        mesh_basename = f"mesh_{uid}"
         mesh_fpath = os.path.join(out_dir, f"{mesh_basename}.obj")
         video_fpath = os.path.join(out_dir, f"{mesh_basename}.mp4")
 
@@ -183,16 +187,11 @@ class MeshGenerator:
         mesh_fpath = self.make_mesh(mesh_fpath, planes)
         return video_fpath, mesh_fpath
     
-    def excute(self, images,out_dir='./tmp'):
+    def excute(self, images,out_dir='./tmp',uid=None):
         '''
         images -> make3d 실행
         '''
-        video_fpath, mesh_fpath = self.make3d(images,out_dir)
+        video_fpath, mesh_fpath = self.make3d(images,out_dir,uid)
         return video_fpath, mesh_fpath
     
-
-        
-
-
-
 

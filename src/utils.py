@@ -354,12 +354,27 @@ def loadobjtex(meshfile):
     uvs = np.array(vt, dtype=np.float32)
     return pointnp_px3, facenp_fx3, uvs, ftnp_fx3
 
-def convert_obj_to_glb(obj_path):
-    mesh = trimesh.load(obj_path, force='mesh')
+def convert_obj_to_glb(obj_path: str, fix_rotation=True):
+    mesh = trimesh.load(obj_path)
+    
+    if fix_rotation:
+        # 1. X축 -90도 회전
+        Rx = trimesh.transformations.rotation_matrix(
+            angle=-(np.pi / 2), direction=[1, 0, 0], point=[0, 0, 0]
+        )
+        
+        # 2. Z축 -33도 회전 (Unreal 좌표계 기준)
+        Rz = trimesh.transformations.rotation_matrix(
+            angle=-np.deg2rad(33), direction=[0, 0, 1], point=[0, 0, 0]
+        )
+        
+        # 3. 순차 적용: X 회전 후 Z 회전
+        transform = Rz @ Rx
+        mesh.apply_transform(transform)
+
     glb_path = obj_path.replace(".obj", ".glb")
     mesh.export(glb_path)
     return glb_path
-
 
 # ==============================================================================================
 def interpolate(attr, rast, attr_idx, rast_db=None):
@@ -387,3 +402,25 @@ def xatlas_uvmap(ctx, mesh_v, mesh_pos_idx, resolution):
     gb_pos, _ = interpolate(mesh_v[None, ...], rast, mesh_pos_idx.int())
     mask = rast[..., 3:4] > 0
     return uvs, mesh_tex_idx, gb_pos, mask
+
+def convert_textured_obj_to_glb(obj_path: str, glb_output_path: str = None):
+    """
+    텍스처(.mtl + .png)를 포함한 .obj를 로드하여 .glb로 저장
+
+    Args:
+        obj_path: 텍스처 포함된 obj 경로
+        glb_output_path: 저장할 .glb 경로 (None이면 같은 이름으로 저장)
+    Returns:
+        저장된 glb 경로
+    """
+    # .obj 로드 (trimesh가 .mtl과 텍스처 자동 인식)
+    mesh = trimesh.load(obj_path, force='scene')  # scene으로 로드해야 텍스처 유지
+
+    if glb_output_path is None:
+        glb_output_path = obj_path.replace(".obj", ".glb")
+
+    # .glb로 export
+    mesh.export(glb_output_path)
+
+    print(f"GLB 저장 완료: {glb_output_path}")
+    return glb_output_path

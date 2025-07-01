@@ -1,7 +1,8 @@
+# UDP JPEG streaming + steering 전송 통합 예제
 import cv2
 import mediapipe as mp
 import numpy as np
-import pandas as pd
+from udp_sender import send_steering, send_image
 
 # Mediapipe 초기화
 mp_hands = mp.solutions.hands
@@ -12,25 +13,18 @@ mp_drawing = mp.solutions.drawing_utils
 cap = cv2.VideoCapture("src/hand_simulator/test.mp4")
 
 frame_idx = 0
-steering_log = []
-
-# 지속 입력을 위한 상태 변수
+steering_value = 0.0
+steering_ema = 0.0
 last_direction = "NEUTRAL"
-steering_value = 0.0  # -1.0: left, 0: neutral, +1.0: right
-alpha = 0.2  # 감쇠율
+alpha = 0.2
+ema_alpha = 0.1
 
-# ✅ Y축 기준 조향 판단 함수
+
 def get_direction_from_y_axis(hand_info):
-    """
-    Determine steering direction based on vertical Y position of wrists.
-    Y: 0 (top of image) to 1 (bottom of image)
-    """
     if 'Left' in hand_info and 'Right' in hand_info:
         left_y = hand_info['Left'].landmark[0].y
         right_y = hand_info['Right'].landmark[0].y
-
-        threshold = 0.17  # 민감도
-
+        threshold = 0.17
         if left_y + threshold < right_y:
             return "LEFT TURN"
         elif right_y + threshold < left_y:
@@ -39,27 +33,6 @@ def get_direction_from_y_axis(hand_info):
             return "NEUTRAL"
     return "NONE"
 
-# 방향 안정화 함수
-def stabilize_directions(directions, min_consistent_frames=3):
-    stable_directions = []
-    current = directions[0]
-    temp = current
-    count = 1
-
-    for i in range(1, len(directions)):
-        if directions[i] == temp:
-            count += 1
-        else:
-            temp = directions[i]
-            count = 1
-
-        if count >= min_consistent_frames:
-            current = temp
-        stable_directions.append(current)
-
-    return [directions[0]] + stable_directions
-
-# 메인 루프
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -91,31 +64,29 @@ while cap.isOpened():
             else:
                 steering_value = 0.0
 
-    # 손이 감지되지 않거나 "NONE"일 때는 서서히 감쇠
     if direction_result == "NONE":
         steering_value *= (1 - alpha)
 
-    # 시각화
-    cv2.putText(image, f"{last_direction} | Steering: {steering_value:.2f}",
+    # EMA Smoothing
+    steering_ema = ema_alpha * steering_value + (1 - ema_alpha) * steering_ema
+
+    # 시각화 텍스트 포함
+    cv2.putText(image, f"{last_direction} | Steering: {steering_ema:.2f}",
                 (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
 
-    # 로그 저장
-    steering_log.append({
-        "frame": frame_idx,
-        "direction": last_direction,
-        "steering": steering_value
-    })
-    frame_idx += 1
+    # 전송용 JPEG 압축
+    _, jpeg_img = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 60])
+    img_bytes = jpeg_img.tobytes()
 
-    cv2.imshow("Y-Axis Steering", image)
+    # 영상 전송
+    send_image(img_bytes)
+
+    # 조향 값도 별도 전송
+    send_steering(steering_ema)
+
+    cv2.imshow("Streaming View", image)
     if cv2.waitKey(1) & 0xFF == 27:
         break
 
 cap.release()
 cv2.destroyAllWindows()
-
-# CSV 저장
-df = pd.DataFrame(steering_log)
-df["stable_direction"] = stabilize_directions(df["direction"].tolist())
-df.to_csv("y_axis_steering.csv", index=False)
-print("조향 결과가 'y_axis_steering.csv'에 저장되었습니다.")
