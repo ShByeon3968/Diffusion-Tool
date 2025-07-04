@@ -1,5 +1,7 @@
 import torch
 import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 from omegaconf import OmegaConf
 import tempfile
 from tqdm import tqdm
@@ -14,7 +16,7 @@ from einops import rearrange
 from diffusers import DiffusionPipeline, EulerAncestralDiscreteScheduler
 from torchvision.transforms import v2
 from huggingface_hub import hf_hub_download
-from utils import *
+from custom_utils import *
 import uuid
 
 class MVSGenerator:
@@ -33,7 +35,7 @@ class MVSGenerator:
         state_dict = torch.load(unet_ckpt_path, map_location="cpu")
         self.pipeline.unet.load_state_dict(state_dict, strict=True)
         self.device = torch.device("cuda")
-        self.pipeline = self.pipeline.to(self.device)
+        self.pipeline = self.pipeline.to("cuda")
 
     def preprocess(self,input_image, do_remove_background):
         rembg_session = rembg.new_session() if do_remove_background else None
@@ -72,11 +74,12 @@ class MVSGenerator:
         return mv_images, mv_show_image
     
 class MeshGenerator:
-    def __init__(self, config_path:str='configs/instant-mesh-large.yaml', use_fp16=True, use_compile=True):
+    def __init__(self, config_path:str='configs/instant-mesh-base.yaml', use_fp16=True, use_compile=True):
         self.use_fp16 = use_fp16
         self.use_compile = use_compile
-        self.model = self.set_model(config_path)
         self.device = torch.device('cuda')
+        self.model = self.set_model(config_path)
+        
 
     def set_model(self,config_path):
         config = OmegaConf.load(config_path)
@@ -88,11 +91,10 @@ class MeshGenerator:
         state_dict = torch.load(model_ckpt_path, map_location='cpu')['state_dict']
         state_dict = {k[14:]: v for k, v in state_dict.items() if k.startswith('lrm_generator.') and 'source_camera' not in k}
         model.load_state_dict(state_dict, strict=True)
-        device = torch.device('cuda')
-        model = model.to(device)
+        model = model.to(self.device)
         self.IS_FLEXICUBES = True if config_name.startswith('instant-mesh') else False
         if self.IS_FLEXICUBES:
-            model.init_flexicubes_geometry(device, fovy=30.0)
+            model.init_flexicubes_geometry(self.device, fovy=30.0)
         model = model.eval()
 
         if self.use_compile and hasattr(model, 'compile'):

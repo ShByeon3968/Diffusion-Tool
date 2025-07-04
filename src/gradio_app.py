@@ -5,7 +5,7 @@ from PIL import Image
 import os
 import uuid
 from glob import glob
-from utils import convert_obj_to_glb
+from custom_utils import convert_obj_to_glb
 
 # 모델 선택 매핑
 GENERATOR_MAP = {
