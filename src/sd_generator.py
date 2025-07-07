@@ -1,9 +1,10 @@
 from abc import *
-from diffusers import StableDiffusionXLPipeline,SanaPipeline,StableDiffusion3Pipeline
+from diffusers import StableDiffusionXLPipeline,SanaPipeline,StableDiffusion3Pipeline, StableDiffusionControlNetImg2ImgPipeline, ControlNetModel, UniPCMultistepScheduler
 import torch
 from PIL import Image
-from transformers import CLIPTextModel, CLIPTokenizer
+from transformers import CLIPTextModel, CLIPTokenizer, pipelines
 from safetensors.torch import load_file
+import numpy as np
 
 
 class DiffusionGenerator(metaclass=ABCMeta):
@@ -55,3 +56,28 @@ class SanaGenerator(DiffusionGenerator):
                 generator=torch.Generator(device="cuda").manual_seed(42),
             )
         return image[0]
+
+class ControlNetBasedGenerator(DiffusionGenerator):
+    def __init__(self,depth_model_name ="lllyasviel/control_v11f1p_sd15_depth"
+                 ,sd_model="stable-diffusion-v1-5/stable-diffusion-v1-5",device='cuda'):
+        super().__init__()
+        self.controlnet = ControlNetModel(depth_model_name,torch_dtype=torch.float16,use_safetensors=True)
+        self.pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(sd_model,controlnet=self.controlnet, torch_dtype=torch.float16,use_safetensors=True)
+        self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config)
+        self.pipe.to(device)
+        
+    def get_depthmap(self,input_image):
+        depth_estimator = pipelines("depth-estimation")
+        image = depth_estimator(input_image)["depth"]
+        image = np.array(image)
+        image = image[:, :, None]
+        image = np.concatenate([image, image, image], axis=2)
+        detected_map = torch.from_numpy(image).float() / 255.0
+        depth_map = detected_map.permute(2, 0, 1)
+        return depth_map
+    
+    def generate(self,prompt,input_image):
+        depth_map = self.get_depthmap(input_image)
+        output = self.pipe(prompt=prompt,negative_prompt="low quality, worst quality, blurry",image=input_image,control_image=depth_map,
+                           num_inference_steps=50).images[0]
+        return output
