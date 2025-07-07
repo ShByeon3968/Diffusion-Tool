@@ -34,6 +34,11 @@
 			"Name": "CameraCapture",
 			"Enabled": true,
 			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/content/bd323c0b2ce54b0fa13496316d4bfc35"
+		},
+		{
+			"Name": "ChatAI",
+			"Enabled": true,
+			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/40ff5de5-c233-4c2e-a155-d057ded06fa1"
 		}
 	]
 }

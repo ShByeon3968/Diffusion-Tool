@@ -9,7 +9,7 @@ from prompt_planner import plan_and_rewrite_prompts
 from feedback_rewriter import rewrite_prompt_with_feedback
 from sd_generator import SanaGenerator, CarGenerator, StableDiffusionGenerator
 from image_to_3d import MVSGenerator, MeshGenerator
-from utils import convert_obj_to_glb
+from custom_utils import convert_obj_to_glb
 
 
 app = FastAPI()
@@ -107,17 +107,31 @@ def get_glb(uid: str):
 # ─────────────────────────────────────────
 # 이미지 반환 (gen or mvs)
 # ─────────────────────────────────────────
+# @app.get("/image/{uid}/{type}")
+# def get_generated_image(uid: str, type: str):
+#     if type not in ["gen", "mvs"]:
+#         raise HTTPException(status_code=400, detail="Invalid image type")
+
+#     filename = "gen_image.png" if type == "gen" else "mvs_image.png"
+#     image_path = os.path.join("output", "fastapi", uid, filename)
+
+#     if not os.path.exists(image_path):
+#         raise HTTPException(status_code=404, detail="Image not found")
+#     return FileResponse(image_path, media_type="image/png")
+
+
 @app.get("/image/{uid}/{type}")
-def get_generated_image(uid: str, type: str):
+def get_generated_image_path(uid: str, type: str):
     if type not in ["gen", "mvs"]:
         raise HTTPException(status_code=400, detail="Invalid image type")
 
     filename = "gen_image.png" if type == "gen" else "mvs_image.png"
     image_path = os.path.join("output", "fastapi", uid, filename)
 
-    if not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(image_path, media_type="image/png")
+    # 반환할 상대 경로 또는 URL 경로
+    image_url_path = os.path.join("output", "fastapi", uid, filename)
+
+    return JSONResponse(content={"image_path": image_url_path})
 
 @app.get("/run_mesh_editor")
 def run_mesh_editor_gui(uid: str):

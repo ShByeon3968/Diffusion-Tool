@@ -6,7 +6,14 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
+#include "ImageUtils.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
 #include "Logging/LogMacros.h"
+#include "Modules/ModuleManager.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
+#include "Misc/FileHelper.h"
 
 // Sets default values
 AServerRequestActor::AServerRequestActor()
@@ -89,38 +96,33 @@ void AServerRequestActor::OnMeshGenerationResponse(FHttpRequestPtr Request, FHtt
 
 
 
+
 // 이미지 요청 및 응답 처리
 
 void AServerRequestActor::OnImageResponseReceived(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful, FOnImageDownloaded Callback, FString UID, FString Type)
 {
     if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() != 200)
     {
-        UE_LOG(LogTemp, Error, TEXT("[Image] HTTP request failed or invalid response."));
-        Callback.ExecuteIfBound(TEXT(""),false);
+        UE_LOG(LogTemp, Error, TEXT("[ImagePath] HTTP request failed or invalid response."));
+        Callback.ExecuteIfBound(TEXT(""), false);
         return;
     }
 
-    const TArray<uint8>& ImageData = Response->GetContent();
+    FString ResponseContent = Response->GetContentAsString();
+    TSharedPtr<FJsonObject> JsonObject;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseContent);
 
-    FString SaveDir = FPaths::ProjectSavedDir() + "/DownloadedImages/" + UID + "/";
-    FString Filename = Type + "_image.png";
-    FString FullPath = SaveDir + Filename;
-
-    IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-    if (!PlatformFile.DirectoryExists(*SaveDir))
+    if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
     {
-        PlatformFile.CreateDirectoryTree(*SaveDir);
-    }
+        FString ImagePath = JsonObject->GetStringField(TEXT("image_path"));
+        UE_LOG(LogTemp, Log, TEXT("[ImagePath] Received image path: %s"), *ImagePath);
 
-    if (FFileHelper::SaveArrayToFile(ImageData, *FullPath))
-    {
-        UE_LOG(LogTemp, Log, TEXT("[Image] Saved to %s"), *FullPath);
-        Callback.ExecuteIfBound(FullPath,true);
+        Callback.ExecuteIfBound(ImagePath, true);  // 전달 성공
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[Image] Failed to save image."));
-        Callback.ExecuteIfBound(TEXT(""),false);
+        UE_LOG(LogTemp, Error, TEXT("[ImagePath] JSON parsing failed"));
+        Callback.ExecuteIfBound(TEXT(""), false);
     }
 }
 
@@ -130,16 +132,78 @@ void AServerRequestActor::RequestImageFromServer(const FString& UID, const FStri
     if (!(Type == "gen" || Type == "mvs"))
     {
         UE_LOG(LogTemp, Error, TEXT("[Image] Invalid type: %s"), *Type);
-        Callback.ExecuteIfBound(TEXT(""),false);
+        Callback.ExecuteIfBound(TEXT(""), false);
         return;
     }
 
     FString URL = FString::Printf(TEXT("http://localhost:8000/image/%s/%s"), *UID, *Type);
+
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
     Request->SetURL(URL);
     Request->SetVerb("GET");
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+
     Request->OnProcessRequestComplete().BindUObject(this, &AServerRequestActor::OnImageResponseReceived, Callback, UID, Type);
     Request->ProcessRequest();
+}
+
+void AServerRequestActor::WaitForImageThenLoad(FString Path)
+{
+    // 0.5초마다 이미지 존재 여부 체크
+    GetWorld()->GetTimerManager().SetTimer(
+        ImageCheckHandle,
+        [this, Path]() {
+            if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*Path))
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Image exists, loading..."));
+
+                UTexture2D* LoadedTexture = LoadTextureFromFile(Path);
+                GenTexture = LoadedTexture;
+                if (LoadedTexture)
+                {
+                    // TODO: 로드된 텍스처 사용
+                    UE_LOG(LogTemp, Warning, TEXT("Texture loaded successfully"));
+                }
+
+                // 타이머 제거
+                GetWorld()->GetTimerManager().ClearTimer(ImageCheckHandle);
+            }
+        },
+        0.5f,
+        true
+    );
+}
+
+UTexture2D* AServerRequestActor::LoadTextureFromFile(const FString& FilePath)
+{
+    TArray<uint8> RawFileData;
+    if (!FFileHelper::LoadFileToArray(RawFileData, *FilePath)) return nullptr;
+
+    IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
+    TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG); // PNG 기준
+
+    if (ImageWrapper.IsValid() && ImageWrapper->SetCompressed(RawFileData.GetData(), RawFileData.Num()))
+    {
+        TArray64<uint8> UncompressedBGRA;
+        if (ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, UncompressedBGRA))
+        {
+            UTexture2D* Texture = UTexture2D::CreateTransient(
+                ImageWrapper->GetWidth(),
+                ImageWrapper->GetHeight(),
+                PF_B8G8R8A8
+            );
+
+            if (!Texture) return nullptr;
+
+            void* TextureData = Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+            FMemory::Memcpy(TextureData, UncompressedBGRA.GetData(), UncompressedBGRA.Num());
+            Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+            Texture->UpdateResource();
+            return Texture;
+        }
+    }
+
+    return nullptr;
 }
 
