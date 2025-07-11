@@ -95,7 +95,43 @@ void AServerRequestActor::OnMeshGenerationResponse(FHttpRequestPtr Request, FHtt
 }
 
 
+UTexture2D* AServerRequestActor::LoadTextureFromFile(const FString& FilePath)
+{
+    TArray<uint8> RawFileData;
+    if (!FFileHelper::LoadFileToArray(RawFileData, *FilePath))
+    {
+        UE_LOG(LogTemp, Error, TEXT("[Image] Failed to read file: %s"), *FilePath);
+        return nullptr;
+    }
 
+    IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
+    TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG);
+
+    if (ImageWrapper.IsValid() && ImageWrapper->SetCompressed(RawFileData.GetData(), RawFileData.Num()))
+    {
+        TArray64<uint8> UncompressedBGRA;
+        if (ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, UncompressedBGRA))
+        {
+            UTexture2D* Texture = UTexture2D::CreateTransient(
+                ImageWrapper->GetWidth(),
+                ImageWrapper->GetHeight(),
+                PF_B8G8R8A8
+            );
+
+            if (!Texture) return nullptr;
+
+            void* TextureData = Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+            FMemory::Memcpy(TextureData, UncompressedBGRA.GetData(), UncompressedBGRA.Num());
+            Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+            Texture->UpdateResource();
+            return Texture;
+        }
+    }
+
+    UE_LOG(LogTemp, Error, TEXT("[Image] Failed to decode image: %s"), *FilePath);
+    return nullptr;
+}
 
 // 이미지 요청 및 응답 처리
 
@@ -103,25 +139,40 @@ void AServerRequestActor::OnImageResponseReceived(FHttpRequestPtr Request, FHttp
 {
     if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() != 200)
     {
-        UE_LOG(LogTemp, Error, TEXT("[ImagePath] HTTP request failed or invalid response."));
+        UE_LOG(LogTemp, Error, TEXT("[Image] HTTP request failed or invalid response."));
         Callback.ExecuteIfBound(TEXT(""), false);
         return;
     }
 
-    FString ResponseContent = Response->GetContentAsString();
-    TSharedPtr<FJsonObject> JsonObject;
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseContent);
+    const TArray<uint8>& ImageData = Response->GetContent();
 
-    if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
+    FString SaveDir = FPaths::ProjectSavedDir() + "/DownloadedImages/" + UID + "/";
+    FString Filename = Type + "_image.png";
+    FString FullPath = SaveDir + Filename;
+
+    IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+    if (!PlatformFile.DirectoryExists(*SaveDir))
     {
-        FString ImagePath = JsonObject->GetStringField(TEXT("image_path"));
-        UE_LOG(LogTemp, Log, TEXT("[ImagePath] Received image path: %s"), *ImagePath);
+        PlatformFile.CreateDirectoryTree(*SaveDir);
+    }
 
-        Callback.ExecuteIfBound(ImagePath, true);  // 전달 성공
+    if (FFileHelper::SaveArrayToFile(ImageData, *FullPath))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Image] Saved to %s"), *FullPath);
+
+        UTexture2D* LoadedTexture = LoadTextureFromFile(FullPath);
+        if (LoadedTexture)
+        {
+            Callback.ExecuteIfBound(FullPath, true);
+        }
+        else
+        {
+            Callback.ExecuteIfBound(TEXT(""), false);
+        }
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[ImagePath] JSON parsing failed"));
+        UE_LOG(LogTemp, Error, TEXT("[Image] Failed to save image."));
         Callback.ExecuteIfBound(TEXT(""), false);
     }
 }
@@ -147,63 +198,59 @@ void AServerRequestActor::RequestImageFromServer(const FString& UID, const FStri
     Request->ProcessRequest();
 }
 
-void AServerRequestActor::WaitForImageThenLoad(FString Path)
+// MeshEdit
+void AServerRequestActor::RequestMeshImprovement(const FString& FeedBack, FOnMeshEditedDynamic Callback)
 {
-    // 0.5초마다 이미지 존재 여부 체크
-    GetWorld()->GetTimerManager().SetTimer(
-        ImageCheckHandle,
-        [this, Path]() {
-            if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*Path))
-            {
-                UE_LOG(LogTemp, Warning, TEXT("Image exists, loading..."));
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(TEXT("http://localhost:8000/feedback_rewrite/"));
+    Request->SetVerb("POST");
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/x-www-form-urlencoded"));
 
-                UTexture2D* LoadedTexture = LoadTextureFromFile(Path);
-                GenTexture = LoadedTexture;
-                if (LoadedTexture)
-                {
-                    // TODO: 로드된 텍스처 사용
-                    UE_LOG(LogTemp, Warning, TEXT("Texture loaded successfully"));
-                }
+    FString Body = FString::Printf(TEXT("feedback=%s"),
+        *FGenericPlatformHttp::UrlEncode(FeedBack));
+    Request->SetContentAsString(Body);
 
-                // 타이머 제거
-                GetWorld()->GetTimerManager().ClearTimer(ImageCheckHandle);
-            }
-        },
-        0.5f,
-        true
-    );
+    // Callback 캡처를 위한 람다 사용
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr Req, FHttpResponsePtr Res, bool bSuccess)
+        {
+            this->OnMeshImprovementResponse(Req, Res, bSuccess, Callback);
+        });
+
+    Request->ProcessRequest();
 }
 
-UTexture2D* AServerRequestActor::LoadTextureFromFile(const FString& FilePath)
+void AServerRequestActor::OnMeshImprovementResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful, FOnMeshEditedDynamic Callback)
 {
-    TArray<uint8> RawFileData;
-    if (!FFileHelper::LoadFileToArray(RawFileData, *FilePath)) return nullptr;
-
-    IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));
-    TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(EImageFormat::PNG); // PNG 기준
-
-    if (ImageWrapper.IsValid() && ImageWrapper->SetCompressed(RawFileData.GetData(), RawFileData.Num()))
+    if (!bWasSuccessful || !Response.IsValid())
     {
-        TArray64<uint8> UncompressedBGRA;
-        if (ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, UncompressedBGRA))
-        {
-            UTexture2D* Texture = UTexture2D::CreateTransient(
-                ImageWrapper->GetWidth(),
-                ImageWrapper->GetHeight(),
-                PF_B8G8R8A8
-            );
-
-            if (!Texture) return nullptr;
-
-            void* TextureData = Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
-            FMemory::Memcpy(TextureData, UncompressedBGRA.GetData(), UncompressedBGRA.Num());
-            Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
-
-            Texture->UpdateResource();
-            return Texture;
-        }
+        UE_LOG(LogTemp, Error, TEXT("[HTTP] request failed"));
+        return;
     }
 
-    return nullptr;
-}
+    if (Response->GetResponseCode() != 200)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[HTTP] response failed: %s"), *Response->GetContentAsString());
+        return;
+    }
 
+    FString ResponseContent = Response->GetContentAsString();
+    TSharedPtr<FJsonObject> JsonObject;
+    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResponseContent);
+
+    if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
+    {
+        FString UID = JsonObject->GetStringField("uid");
+
+        UE_LOG(LogTemp, Log, TEXT("[MeshEdited] UID received: %s"), *UID);
+
+        if (Callback.IsBound())
+        {
+            Callback.Execute(UID);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[HTTP] JSON parsing failed"));
+    }
+}

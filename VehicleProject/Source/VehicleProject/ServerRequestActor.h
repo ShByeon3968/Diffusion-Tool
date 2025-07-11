@@ -22,6 +22,8 @@ DECLARE_DYNAMIC_DELEGATE_OneParam(FOnMeshGeneratedDynamic, const FString&, UID);
  */
 DECLARE_DYNAMIC_DELEGATE_TwoParams(FOnImageDownloaded, FString, FilePath, bool, bSuccess);
 
+DECLARE_DYNAMIC_DELEGATE_OneParam(FOnMeshEditedDynamic, const FString&, UID);
+
 UCLASS()
 class VEHICLEPROJECT_API AServerRequestActor : public AActor
 {
@@ -45,22 +47,24 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void RequestImageFromServer(const FString& UID, const FString& Type, const FOnImageDownloaded& Callback);
 
+	UFUNCTION(BlueprintCallable)
+	void RequestMeshImprovement(const FString& FeedBack, FOnMeshEditedDynamic Callback);
+
 	// Blueprint에서 접근 가능한 GLB 경로
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "GLB Server")
 	FString LastReceivedGLBPath;
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "GLB Server")
 	UTexture2D* GenTexture;
+	UFUNCTION(BlueprintCallable)
+	UTexture2D* LoadTextureFromFile(const FString& FilePath);
 
 private:
+	// 생성된 이미지
 	void OnImageResponseReceived(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful, FOnImageDownloaded Callback, FString UID, FString Type);
-
+	// 메쉬 생성
 	void OnMeshGenerationResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful, FOnMeshGeneratedDynamic Callback);
-	/*void SpawnGLBMesh(const FString& GlbPath);*/
-
-	UFUNCTION(BlueprintCallable)
-	void WaitForImageThenLoad(FString Path);
-
+	// 메쉬 향상
+	void OnMeshImprovementResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful, FOnMeshEditedDynamic Callback);
 
 	FTimerHandle ImageCheckHandle;
-	UTexture2D* LoadTextureFromFile(const FString& FilePath);
 };

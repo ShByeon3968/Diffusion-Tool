@@ -1,11 +1,10 @@
 from abc import *
-from diffusers import StableDiffusionXLPipeline,SanaPipeline,StableDiffusion3Pipeline, StableDiffusionControlNetImg2ImgPipeline, ControlNetModel, UniPCMultistepScheduler
+from diffusers import StableDiffusionXLPipeline,SanaPipeline,StableDiffusion3Pipeline, StableDiffusionControlNetImg2ImgPipeline, ControlNetModel, UniPCMultistepScheduler,OmniGenPipeline
 import torch
 from PIL import Image
 from transformers import CLIPTextModel, CLIPTokenizer, pipelines
 from safetensors.torch import load_file
 import numpy as np
-
 
 class DiffusionGenerator(metaclass=ABCMeta):
     def __init__(self):
@@ -81,3 +80,22 @@ class ControlNetBasedGenerator(DiffusionGenerator):
         output = self.pipe(prompt=prompt,negative_prompt="low quality, worst quality, blurry",image=input_image,control_image=depth_map,
                            num_inference_steps=50).images[0]
         return output
+    
+class OmniGenImageEditGenerator(DiffusionGenerator):
+    def __init__(self,model_name="Shitao/OmniGen-v1-diffusers",device='cuda'):
+        super().__init__()
+        self.pipe = OmniGenPipeline.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16
+        )
+        self.generator = torch.Generator(device="cpu").manual_seed(42)
+    def generate(self,prompt,input_images):
+        image = self.pipe(
+            prompt=prompt, 
+            input_images=input_images, 
+            guidance_scale=2, 
+            img_guidance_scale=1.6,
+            use_input_image_size_as_output=True,
+            generator=self.generator
+        ).images[0]
+        return image
