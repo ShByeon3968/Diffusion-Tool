@@ -202,7 +202,7 @@ void AServerRequestActor::RequestImageFromServer(const FString& UID, const FStri
 void AServerRequestActor::RequestMeshImprovement(const FString& FeedBack, FOnMeshEditedDynamic Callback)
 {
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
-    Request->SetURL(TEXT("http://localhost:8000/feedback_rewrite/"));
+    Request->SetURL(TEXT("http://localhost:8000/feedback_rewrite"));
     Request->SetVerb("POST");
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/x-www-form-urlencoded"));
 

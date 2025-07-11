@@ -22,7 +22,7 @@ class StableDiffusionGenerator(DiffusionGenerator):
 
     def generate(self,prompt, negative_prompt="low quality, worst quality, blurry",guidance_scale=7.0, num_inference_steps=28):
         result = self.pipe(prompt, negative_prompt=negative_prompt, guidance_scale=guidance_scale,
-                           num_inference_steps=num_inference_steps).images
+                           num_inference_steps=num_inference_steps,generator=torch.Generator(device="cuda").manual_seed(42)).images
         return result
     
 class CarGenerator(DiffusionGenerator):
@@ -88,11 +88,14 @@ class OmniGenImageEditGenerator(DiffusionGenerator):
             model_name,
             torch_dtype=torch.bfloat16
         )
-        self.generator = torch.Generator(device="cpu").manual_seed(42)
+        self.pipe.to(device)
+        self.generator = torch.Generator(device="cuda").manual_seed(42)
     def generate(self,prompt,input_images):
+        print("input prompt:", prompt)
+        prompt_with_tag = f"<img><|image_1|></img> {prompt}"
         image = self.pipe(
-            prompt=prompt, 
-            input_images=input_images, 
+            prompt=prompt_with_tag, 
+            input_images=[input_images], 
             guidance_scale=2, 
             img_guidance_scale=1.6,
             use_input_image_size_as_output=True,

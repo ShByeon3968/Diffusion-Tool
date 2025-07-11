@@ -85,17 +85,19 @@ def generate_mesh(prompt: str, model: str, output_dir: str, uid: str):
 def generate_mesh_edit(prompt: str,image_path:str,output_dir: str,uid):
     global PRE_PROMPT
     try:
+        print("Load Improvement Pipeline")
         with torch.no_grad():
             # 1. 이미지 Editing - improved prompt 기반
             edit_net = OmniGenImageEditGenerator()
             input_image = Image.open(image_path)
             out_image_path = os.path.join(output_dir, "gen_image.png")
+            print("Generate edited image")
             output = edit_net.generate(prompt,input_image)
             output.save(out_image_path)
             del edit_net
             torch.cuda.empty_cache()
             gc.collect()
-
+            print("Image Editted")
             # 2. MVS 이미지 생성
             mvs = MVSGenerator(input_image_path=out_image_path)
             mv_images, _ = mvs.excute()
@@ -105,7 +107,7 @@ def generate_mesh_edit(prompt: str,image_path:str,output_dir: str,uid):
             del mvs
             torch.cuda.empty_cache()
             gc.collect()
-
+            print("MVS Image Generated")
             # 3. 메쉬 생성
             mesh_dir = os.path.join(output_dir, "mesh")
             os.makedirs(mesh_dir, exist_ok=True)
@@ -116,7 +118,6 @@ def generate_mesh_edit(prompt: str,image_path:str,output_dir: str,uid):
             del mesh_generator
             torch.cuda.empty_cache()
             gc.collect()
-
             # 4. GLB 변환
             glb_path = convert_obj_to_glb(obj_path)
             os.rename(glb_path, os.path.join(output_dir, "mesh.glb"))
@@ -195,6 +196,7 @@ def rewrite_prompt_and_regenerate(
     background_tasks: BackgroundTasks = None
 ):
     global GLOBAL_UID
+    global PRE_PROMPT
     if feedback is None:
         raise HTTPException(status_code=400, detail=f"Unknown model: {model}")
     
