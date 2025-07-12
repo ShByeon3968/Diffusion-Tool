@@ -72,10 +72,4 @@ flowchart TD
 | GET  | `/image/{uuid}/{type}` | 생성된 이미지(`gen`, `mvs`) 반환 |
 | POST | `/feedback_rewrite` | GPT-4o 기반 프롬프트 개선 후 3D 재생성 실행 |
 
-## 🛠 설치 및 실행
 
-### 요구사항
-- Python 3.10+
-- CUDA 지원 GPU
-- `conda` 또는 `venv` 환경 권장
-- Unreal Engine 5 (클라이언트 연동 시)
