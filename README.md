@@ -45,7 +45,6 @@ flowchart TD
     Rewriter["🧠 Feedback Rewriting Agent"]
     FinalPrompt["📝 최종 프롬프트"]
     DiffGen["🎨 Stable Diffusion / OmniGen"]
-    MVS["📷 Multiview Generator"]
     TRELLIS["🧱 TRELLIS 3D Reconstruction"]
     GLB["📦 .glb Mesh"]
 
