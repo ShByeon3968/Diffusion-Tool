@@ -1,6 +1,6 @@
 # Prompt2GLB - Diffusion, Image to 3D 모델을 활용한 실시간 3D Asset 생성기
 
-//![Main Banner](asset/gradio_demo.png)
+//![Main Banner](asset/app_client.png)
 
 본 프로젝트는 **Stable Diffusion 3 기반 이미지 생성**과 **Image-to-3D **를 활용하여 텍스트 프롬프트로부터 3D 객체를 자동 생성하는 AI 콘텐츠 생성 도구입니다.
 
