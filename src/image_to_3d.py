@@ -2,6 +2,7 @@ import torch
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
+os.environ['SPCONV_ALGO'] = 'native'
 from omegaconf import OmegaConf
 import tempfile
 from tqdm import tqdm
@@ -17,6 +18,8 @@ from diffusers import DiffusionPipeline, EulerAncestralDiscreteScheduler
 from torchvision.transforms import v2
 from huggingface_hub import hf_hub_download
 from custom_utils import *
+from TRELLIS.trellis.pipelines import TrellisImageTo3DPipeline
+from TRELLIS.trellis.utils import render_utils, postprocessing_utils
 import uuid
 
 class MVSGenerator:
@@ -196,4 +199,33 @@ class MeshGenerator:
         video_fpath, mesh_fpath = self.make3d(images,out_dir,uid)
         return video_fpath, mesh_fpath
     
+class TrellisMeshGenerator:
+    def __init__(self, model_name="microsoft/TRELLIS-image-large"):
+        self.pipeline = TrellisImageTo3DPipeline.from_pretrained(model_name)
+        self.pipeline.cuda()
 
+    def excute(self,input_image_path,output_path):
+        # Run the pipeline
+        input_image = Image.open(input_image_path)
+        outputs = self.pipeline.run(
+            input_image,
+            seed=1,
+            # Optional parameters
+            # sparse_structure_sampler_params={
+            #     "steps": 12,
+            #     "cfg_strength": 7.5,
+            # },
+            # slat_sampler_params={
+            #     "steps": 12,
+            #     "cfg_strength": 3,
+            # },
+        )
+        # GLB files can be extracted from the outputs
+        glb = postprocessing_utils.to_glb(
+            outputs['gaussian'][0],
+            outputs['mesh'][0],
+            # Optional parameters
+            simplify=0.95,          # Ratio of triangles to remove in the simplification process
+            texture_size=1024,      # Size of the texture used for the GLB
+        )
+        glb.export(output_path)

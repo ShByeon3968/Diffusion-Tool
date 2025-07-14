@@ -1,17 +1,19 @@
 from fastapi import FastAPI, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
-from typing import Optional
 import uuid, os, torch, gc, traceback
 from glob import glob
 from PIL import Image
+from threading import Thread
 
 from mesh_editor import run_mesh_editor
 from prompt_planner import plan_and_rewrite_prompts
 from feedback_rewriter import rewrite_prompt_for_omnigen_editing
-from sd_generator import SanaGenerator, CarGenerator, StableDiffusionGenerator, ControlNetBasedGenerator, OmniGenImageEditGenerator
-from image_to_3d import MVSGenerator, MeshGenerator
+from sd_generator import SanaGenerator, CarGenerator, StableDiffusionGenerator,OmniGenImageEditGenerator
+from image_to_3d import MVSGenerator, MeshGenerator, TrellisMeshGenerator
 from custom_utils import convert_obj_to_glb
-
+import multiprocessing as mp
+mp.set_start_method('spawn', force=True)
+os.environ["PYTORCH_FORCE_FORK_RNG"] = "1"
 
 app = FastAPI()
 
@@ -83,7 +85,6 @@ def generate_mesh(prompt: str, model: str, output_dir: str, uid: str):
         gc.collect()
 
 def generate_mesh_edit(prompt: str,image_path:str,output_dir: str,uid):
-    global PRE_PROMPT
     try:
         print("Load Improvement Pipeline")
         with torch.no_grad():
@@ -98,29 +99,19 @@ def generate_mesh_edit(prompt: str,image_path:str,output_dir: str,uid):
             torch.cuda.empty_cache()
             gc.collect()
             print("Image Editted")
-            # 2. MVS 이미지 생성
-            mvs = MVSGenerator(input_image_path=out_image_path)
-            mv_images, _ = mvs.excute()
-            mv_image_path = os.path.join(output_dir, "mvs_image.png")
-            mv_images.save(mv_image_path)
-            mvs.pipeline.to("cpu")
-            del mvs
-            torch.cuda.empty_cache()
-            gc.collect()
-            print("MVS Image Generated")
-            # 3. 메쉬 생성
-            mesh_dir = os.path.join(output_dir, "mesh")
+
+            # 2. 메쉬 생성
+            mesh_dir = os.path.join(output_dir)
+            mesh_path = os.path.join(mesh_dir,"mesh.glb")
             os.makedirs(mesh_dir, exist_ok=True)
-            mesh_generator = MeshGenerator()
-            mesh_generator.excute(mv_images, mesh_dir,uid)
-            obj_path = glob(os.path.join(mesh_dir, "*.obj"))[0]
-            mesh_generator.model.to("cpu")
-            del mesh_generator
+            trls_gen = TrellisMeshGenerator()
+            trls_gen.excute(out_image_path,mesh_path)
+            del trls_gen 
             torch.cuda.empty_cache()
             gc.collect()
-            # 4. GLB 변환
-            glb_path = convert_obj_to_glb(obj_path)
-            os.rename(glb_path, os.path.join(output_dir, "mesh.glb"))
+            print("Mesh Generated")
+
+            
     except Exception:
         traceback.print_exc()
     finally:
@@ -193,7 +184,6 @@ def run_mesh_editor_gui(uid: str):
 @app.post("/feedback_rewrite")
 def rewrite_prompt_and_regenerate(
     feedback: str = Form(...),
-    background_tasks: BackgroundTasks = None
 ):
     global GLOBAL_UID
     global PRE_PROMPT
@@ -211,6 +201,8 @@ def rewrite_prompt_and_regenerate(
     output_dir = os.path.join("output", "fastapi", uid)
     os.makedirs(output_dir, exist_ok=True)
 
-    # 재생성 파이프라인 실행
-    background_tasks.add_task(generate_mesh_edit, rewritten_prompt, input_image_path, output_dir, uid)
+    def threaded_task():
+        generate_mesh_edit(rewritten_prompt, input_image_path, output_dir, uid)
+
+    Thread(target=threaded_task).start()
     return JSONResponse(status_code=200, content={"uid": uid})
