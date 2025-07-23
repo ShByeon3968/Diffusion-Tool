@@ -10,7 +10,7 @@ hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2,
                        min_detection_confidence=0.5, min_tracking_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
 
-cap = cv2.VideoCapture("src/hand_simulator/test.mp4")
+cap = cv2.VideoCapture(0)
 
 frame_idx = 0
 steering_value = 0.0
