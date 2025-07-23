@@ -1,4 +1,4 @@
-# Prompt2GLB - Diffusion, Image to 3D 모델을 활용한 3D Asset 생성기
+# Prompt2Drive - Diffusion, Image to 3D 모델을 활용한 3D Asset 생성기
 
 //![Main Banner](asset/app_client.png)
 
